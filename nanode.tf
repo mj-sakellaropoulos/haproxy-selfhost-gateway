@@ -1,6 +1,6 @@
 resource "tailscale_tailnet_key" "ts_auth_key" {
   reusable      = false
-  ephemeral     = true
+  ephemeral     = false
   preauthorized = true
   expiry        = 3600
   description   = "Temporary key for terraform"
