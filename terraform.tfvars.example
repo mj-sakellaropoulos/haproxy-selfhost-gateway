@@ -1,0 +1,44 @@
+############################################
+# Linode Provider & Instance Configuration #
+############################################
+
+linode_token = "linode-api-token-here"
+
+haproxy_linode_name    = "hostname"
+region  = "ca-central"
+type    = "g6-nanode-1"
+
+root_pass = "set-a-secure-root-password"
+
+ssh_keys = [
+  "ssh-rsa AAAAB3... your-public-key-comment"
+]
+
+tags = ["haproxy"]
+
+
+########################################
+# Tailscale & MagicDNS Configuration   #
+########################################
+
+ts_authkey = "tskey-ephemeral-xxxxxxxxxxxxxxxxxxxxxxx"
+
+# This is the full FQDN for the instance on Tailscale's MagicDNS
+# Usually formatted as: hostname.yourtailnet.ts.net
+magicdns_domain = "haproxy-gateway.yourtailnet.ts.net"
+
+
+##############################################
+# HAProxy Data Plane API Installation Config #
+##############################################
+
+dataplane_version = "2.9.13" # !Last working version!
+dataplane_arch    = "amd64" # or "arm64" for ARM-based systems
+
+
+######################################
+# HAProxy Data Plane API Credentials #
+######################################
+
+dataplane_user     = "admin"
+dataplane_password = "set-a-secure-password"

@@ -1,0 +1,123 @@
+#cloud-config
+hostname: ${haproxy_linode_name}
+timezone: EST
+
+package_update: true
+package_upgrade: false
+packages:
+  - htop
+  - haproxy
+  - curl
+  - gnupg
+  - unzip
+  - jq
+
+write_files:
+  - path: /etc/haproxy/haproxy.cfg
+    permissions: '0644'
+    content: |
+      global
+        log /dev/log local0
+        log /dev/log local1 notice
+        daemon
+        maxconn 2048
+        stats socket /var/run/haproxy.sock mode 600 level admin
+
+      defaults
+        log     global
+        mode    http
+        option  httplog
+        timeout connect 10s
+        timeout client  1m
+        timeout server  1m
+
+      userlist dataplaneapi
+        user ${dataplane_user} insecure-password ${dataplane_password}
+
+  - path: /etc/dataplaneapi/dataplaneapi.yml
+    permissions: '0644'
+    content: |
+      config_version: 2
+      name: ${haproxy_linode_name}
+      dataplaneapi:
+        host: 0.0.0.0
+        port: 5555
+        advertised:
+          api_address: ""
+          api_port: 0
+        scheme:
+          - http
+        userlist:
+          userlist: dataplaneapi
+          userlist_file: ""
+        transaction:
+          transaction_dir: /var/lib/dataplaneapi/transactions
+          backups_number: 10
+          backups_dir: /var/lib/dataplaneapi/backups
+        resources:
+          maps_dir: /etc/haproxy/maps
+          ssl_certs_dir: /etc/haproxy/ssl
+          general_storage_dir: /etc/haproxy/general
+          spoe_dir: /etc/haproxy/spoe
+      haproxy:
+        config_file: /etc/haproxy/haproxy.cfg
+        haproxy_bin: /usr/sbin/haproxy
+        reload:
+          reload_delay: 5
+          service_name: haproxy
+          reload_strategy: systemd
+      log_targets:
+        - log_to: file
+          log_file: /var/log/dataplaneapi.log
+
+  - path: /etc/systemd/system/tailscale-autoconnect.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Auto-connect Tailscale
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/tailscale up --authkey=${ts_authkey} --hostname=${haproxy_linode_name}
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.gpg | gpg --dearmor -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+  - echo "deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/ubuntu noble main" > /etc/apt/sources.list.d/tailscale.list
+  - DEBIAN_FRONTEND=noninteractive apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y tailscale
+
+  # Install yq (v4+ Go-based version)
+  - curl -L https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/bin/yq
+  - chmod +x /usr/bin/yq
+
+  - curl -L https://github.com/haproxytech/dataplaneapi/releases/download/v${dataplane_version}/dataplaneapi_${dataplane_version}_linux_${dataplane_arch}.deb -o /tmp/dataplaneapi.deb
+  - DEBIAN_FRONTEND=noninteractive apt install -o Dpkg::Options::="--force-confold" --force-yes -y /tmp/dataplaneapi.deb
+
+  - systemctl enable tailscale-autoconnect.service
+  - systemctl start tailscale-autoconnect.service
+
+  # Wait for tailscale IP to be assigned
+  - |
+    for i in {1..30}; do
+      TS_IP=$(tailscale ip -4 | head -n1)
+      if [[ "$TS_IP" =~ ^100\. ]]; then
+        echo "Detected Tailscale IP: $TS_IP"
+        break
+      fi
+      sleep 1
+    done
+
+  # Patch dataplaneapi config to bind only to Tailscale IP
+  - yq -i ".dataplaneapi.host = \"$TS_IP\"" /etc/dataplaneapi/dataplaneapi.yml
+
+  - systemctl enable haproxy
+  - systemctl restart haproxy
+
+  - systemctl enable dataplaneapi
+  - systemctl restart dataplaneapi
