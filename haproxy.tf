@@ -65,6 +65,26 @@ resource "haproxy_backend" "backend_web" {
   }
 }
 
+resource "haproxy_backend" "backend_minecraft" {
+  depends_on = [ null_resource.wait_for_dataplane ]
+
+  name                 = "backend_minecraft"
+  mode                 = "tcp"
+
+}
+
+resource "haproxy_server" "srv_minecraft" {
+  name        = "srv_minecraft"
+  port        = 25565
+  address     = "100.121.173.17"
+  parent_name = haproxy_backend.backend_minecraft.name
+  parent_type = "backend"
+  send_proxy  = false
+  check       = false
+
+  depends_on = [haproxy_backend.backend_minecraft]
+}
+
 
 resource "haproxy_server" "srv1" {
   name        = "srv1"
@@ -111,12 +131,30 @@ resource "haproxy_frontend" "frontend_http" {
   depends_on = [haproxy_backend.backend_web]
 }
 
-resource "haproxy_bind" "bind_test" {
-  name        = "bind_test"
-  port        = 80
-  address     = "0.0.0.0"
-  parent_name = "frontend_http"
-  parent_type = "frontend"
-  maxconn     = 3000
-  depends_on  = [haproxy_frontend.frontend_http]
+resource "haproxy_frontend" "frontend_minecraft" {
+  name                        = "frontend_minecraft"
+  backend                     = haproxy_backend.backend_minecraft.name
+  mode                        = "tcp"
+  tcplog                      = true
+
+  depends_on = [haproxy_backend.backend_web]
 }
+
+# resource "haproxy_bind" "bind_mc_test" {
+#   name        = "bind_mc_test"
+#   port        = 25565
+#   address     = "0.0.0.0"
+#   parent_name = "frontend_minecraft"
+#   parent_type = "frontend"
+#   depends_on  = [haproxy_frontend.frontend_minecraft]
+# }
+
+# resource "haproxy_bind" "bind_test" {
+#   name        = "bind_test"
+#   port        = 80
+#   address     = "0.0.0.0"
+#   parent_name = "frontend_http"
+#   parent_type = "frontend"
+#   maxconn     = 3000
+#   depends_on  = [haproxy_frontend.frontend_http]
+# }
